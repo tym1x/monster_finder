@@ -24,8 +24,12 @@ describe('isMonsterOffer', () => {
     expect(isMonsterOffer({ title: 'Monster Energy Ultra 500ml' })).toBe(true)
   })
 
-  it('erkennt Monster Energy anhand der Marke', () => {
+  it('erkennt Monster Energy anhand der Marke (String)', () => {
     expect(isMonsterOffer({ name: 'Energy Drink', brand: 'Monster' })).toBe(true)
+  })
+
+  it('erkennt Monster Energy anhand der Marke (Objekt) - Regression: brand war { name } statt String', () => {
+    expect(isMonsterOffer({ name: 'Energy Drink', brand: { name: 'Monster Energy' } })).toBe(true)
   })
 
   it('lehnt unrelated Treffer ab', () => {
@@ -57,5 +61,16 @@ describe('mapOffer', () => {
       imageUrl: null,
       sourceUrl: 'https://example.com/angebot/42'
     })
+  })
+
+  it('stellt die Marke vor einen generischen Titel (z.B. "Energy Drink")', () => {
+    const deal = mapOffer({
+      id: 7,
+      title: 'Energy Drink',
+      brand: { name: 'Monster Energy' },
+      retailer: { name: 'REWE' },
+      price: { value: 0.99, formattedValue: '0,99 €' }
+    })
+    expect(deal.title).toBe('Monster Energy Energy Drink')
   })
 })

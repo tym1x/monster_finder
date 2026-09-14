@@ -16,7 +16,7 @@ interface RawOffer {
   id?: string | number
   name?: string
   title?: string
-  brand?: string
+  brand?: { name?: string } | string
   retailer?: { name?: string } | string
   merchant?: { name?: string } | string
   price?: { value?: number; formattedValue?: string } | number
@@ -134,6 +134,14 @@ function retailerName(offer: RawOffer): string {
   return r?.name ?? 'Unbekannt'
 }
 
+// Wie retailer/merchant liefert die API die Marke teils als String, teils als
+// Objekt ({ name: 'Monster Energy' }) - hier auf beide Formen vorbereiten.
+function brandName(offer: RawOffer): string {
+  const b = offer.brand
+  if (typeof b === 'string') return b
+  return b?.name ?? ''
+}
+
 function priceValue(offer: RawOffer): number | null {
   if (typeof offer.price === 'number') return offer.price
   if (typeof offer.price?.value === 'number') return offer.price.value
@@ -170,14 +178,27 @@ export interface MonsterDeal {
  * sonst auch thematisch verwandte, aber irrelevante Treffer zurück.
  */
 export function isMonsterOffer(offer: RawOffer): boolean {
-  const haystack = `${offer.title ?? offer.name ?? ''} ${offer.brand ?? ''}`.toLowerCase()
+  const haystack = `${offer.title ?? offer.name ?? ''} ${brandName(offer)}`.toLowerCase()
   return haystack.includes('monster')
+}
+
+// Der Produkttitel ist bei Marktguru oft nur die generische Kategorie
+// ("Energy Drink"), die eigentliche Marke steckt separat in `brand`. Damit
+// Karten unterscheidbar sind, wird die Marke vorangestellt, falls der Titel
+// sie nicht schon enthält.
+function dealTitle(offer: RawOffer): string {
+  const base = offer.title ?? offer.name ?? 'Energy Drink'
+  const brand = brandName(offer)
+  if (brand && !base.toLowerCase().includes(brand.toLowerCase())) {
+    return `${brand} ${base}`
+  }
+  return base
 }
 
 export function mapOffer(offer: RawOffer): MonsterDeal {
   return {
     id: String(offer.id ?? `${retailerName(offer)}-${offer.title ?? offer.name}`),
-    title: offer.title ?? offer.name ?? 'Monster Energy',
+    title: dealTitle(offer),
     retailer: retailerName(offer),
     price: priceValue(offer),
     priceText: priceText(offer),
@@ -192,5 +213,18 @@ export function mapOffer(offer: RawOffer): MonsterDeal {
 export async function fetchMonsterDeals(zipCode: string): Promise<MonsterDeal[]> {
   const creds = await fetchClientCredentials()
   const raw = await searchOffers('Monster Energy', creds, zipCode)
-  return raw.filter(isMonsterOffer).map(mapOffer)
+  const filtered = raw.filter(isMonsterOffer)
+
+  if (raw.length > 0 && filtered.length === 0) {
+    // Die Such-API liefert Treffer, aber unser Monster-Filter erkennt keinen
+    // davon - vermutlich hat sich die Feldstruktur wieder geändert. Diese
+    // Ausgabe zeigt im Server-Log, wie ein Rohangebot tatsächlich aussieht.
+    console.warn(
+      '[marktguru] Such-API lieferte', raw.length,
+      'Treffer, aber keiner wurde als Monster Energy erkannt. Beispiel-Rohdaten:',
+      JSON.stringify(raw[0], null, 2)
+    )
+  }
+
+  return filtered.map(mapOffer)
 }
