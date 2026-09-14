@@ -105,11 +105,7 @@ export function buildSearchUrl(query: string, zipCode: string): URL {
   return url
 }
 
-async function searchOffers(
-  query: string,
-  creds: ClientCredentials,
-  zipCode: string
-): Promise<RawOffer[]> {
+async function searchRaw(query: string, creds: ClientCredentials, zipCode: string): Promise<unknown> {
   const url = buildSearchUrl(query, zipCode)
 
   const res = await fetch(url, {
@@ -123,9 +119,16 @@ async function searchOffers(
   if (!res.ok) {
     throw new Error(`Marktguru Such-API antwortete mit ${res.status}`)
   }
-  const json = await res.json()
+  return res.json()
+}
+
+function extractOffers(json: any): RawOffer[] {
   // Die API wrappt Treffer je nach Version in `.offers`, `.items` oder liefert direkt ein Array.
-  return json.offers ?? json.items ?? (Array.isArray(json) ? json : [])
+  return json?.offers ?? json?.items ?? (Array.isArray(json) ? json : [])
+}
+
+async function searchOffers(query: string, creds: ClientCredentials, zipCode: string): Promise<RawOffer[]> {
+  return extractOffers(await searchRaw(query, creds, zipCode))
 }
 
 function retailerName(offer: RawOffer): string {
@@ -211,12 +214,31 @@ export function mapOffer(offer: RawOffer): MonsterDeal {
 }
 
 // Nur für die Debug-Route (server/api/debug/marktguru.get.ts) - liefert die
-// Rohdaten der Such-API ungefiltert, damit man die tatsächliche Feldstruktur
-// im Browser inspizieren kann, statt sie zu erraten.
+// KOMPLETTE, ungefilterte Rohantwort (nicht erst durch extractOffers()
+// geschickt), damit sichtbar wird, ob der Grund für 0 Treffer eine falsche
+// Envelope-Annahme (.offers/.items) oder eine wirklich leere API-Antwort ist.
+// Testet zusätzlich die einfachere Suche "Monster" zum Vergleich, da die
+// Marktguru-Website selbst offenbar nur nach "Monster" statt "Monster Energy"
+// sucht.
 export async function debugRawSearch(zipCode: string) {
   const creds = await fetchClientCredentials()
-  const raw = await searchOffers('Monster Energy', creds, zipCode)
-  return { totalCount: raw.length, matchedCount: raw.filter(isMonsterOffer).length, sample: raw.slice(0, 5) }
+
+  async function probe(query: string) {
+    const url = buildSearchUrl(query, zipCode)
+    const body = await searchRaw(query, creds, zipCode)
+    const extracted = extractOffers(body)
+    return {
+      requestUrl: url.href,
+      topLevelKeys: body && typeof body === 'object' ? Object.keys(body) : typeof body,
+      extractedCount: extracted.length,
+      rawBody: body
+    }
+  }
+
+  return {
+    query_MonsterEnergy: await probe('Monster Energy'),
+    query_Monster: await probe('Monster')
+  }
 }
 
 export async function fetchMonsterDeals(zipCode: string): Promise<MonsterDeal[]> {
