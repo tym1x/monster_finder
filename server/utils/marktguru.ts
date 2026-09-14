@@ -12,25 +12,19 @@ interface ClientCredentials {
   clientKey: string
 }
 
+// Feldform anhand einer echten API-Antwort ermittelt (per Debug-Route
+// server/api/debug/marktguru.get.ts). Die Suchtreffer liegen unter `.results`,
+// nicht unter `.offers`/`.items` wie ursprünglich angenommen.
 interface RawOffer {
   id?: string | number
-  name?: string
-  title?: string
   brand?: { name?: string } | string
-  retailer?: { name?: string } | string
-  merchant?: { name?: string } | string
-  price?: { value?: number; formattedValue?: string } | number
-  formattedPrice?: string
-  unit?: string
-  validFrom?: string
-  validTo?: string
-  startDate?: string
-  endDate?: string
-  image?: string
-  imageUrl?: string
-  images?: { url?: string }[]
-  url?: string
-  webUrl?: string
+  advertisers?: ({ name?: string } | string)[]
+  product?: { name?: string }
+  price?: number | { value?: number; formattedValue?: string }
+  oldPrice?: number | null
+  volume?: number
+  unit?: { shortName?: string } | string
+  validityDates?: { from?: string; to?: string }[]
 }
 
 /**
@@ -123,26 +117,30 @@ async function searchRaw(query: string, creds: ClientCredentials, zipCode: strin
 }
 
 function extractOffers(json: any): RawOffer[] {
-  // Die API wrappt Treffer je nach Version in `.offers`, `.items` oder liefert direkt ein Array.
-  return json?.offers ?? json?.items ?? (Array.isArray(json) ? json : [])
+  return json?.results ?? json?.offers ?? json?.items ?? (Array.isArray(json) ? json : [])
 }
 
 async function searchOffers(query: string, creds: ClientCredentials, zipCode: string): Promise<RawOffer[]> {
   return extractOffers(await searchRaw(query, creds, zipCode))
 }
 
-function retailerName(offer: RawOffer): string {
-  const r = offer.retailer ?? offer.merchant
-  if (typeof r === 'string') return r
-  return r?.name ?? 'Unbekannt'
+// Mehrere Felder (brand, advertisers, unit) liefert die API mal als String,
+// mal als Objekt mit `.name`/`.shortName` - hier auf beide Formen vorbereiten.
+function nameOf(value: { name?: string } | string | undefined): string {
+  if (typeof value === 'string') return value
+  return value?.name ?? ''
 }
 
-// Wie retailer/merchant liefert die API die Marke teils als String, teils als
-// Objekt ({ name: 'Monster Energy' }) - hier auf beide Formen vorbereiten.
+function retailerName(offer: RawOffer): string {
+  return nameOf(offer.advertisers?.[0]) || 'Unbekannt'
+}
+
 function brandName(offer: RawOffer): string {
-  const b = offer.brand
-  if (typeof b === 'string') return b
-  return b?.name ?? ''
+  return nameOf(offer.brand)
+}
+
+function productName(offer: RawOffer): string {
+  return offer.product?.name || 'Energy Drink'
 }
 
 function priceValue(offer: RawOffer): number | null {
@@ -153,13 +151,33 @@ function priceValue(offer: RawOffer): number | null {
 
 function priceText(offer: RawOffer): string | null {
   if (typeof offer.price === 'object' && offer.price?.formattedValue) return offer.price.formattedValue
-  if (offer.formattedPrice) return offer.formattedPrice
   const value = priceValue(offer)
   return value != null ? `${value.toFixed(2).replace('.', ',')} €` : null
 }
 
+function oldPriceText(offer: RawOffer): string | null {
+  const value = offer.oldPrice
+  const current = priceValue(offer)
+  if (typeof value !== 'number' || (current != null && value <= current)) return null
+  return `${value.toFixed(2).replace('.', ',')} €`
+}
+
+function unitText(offer: RawOffer): string | null {
+  const shortName = typeof offer.unit === 'string' ? offer.unit : offer.unit?.shortName
+  if (typeof offer.volume === 'number' && shortName) {
+    return `${offer.volume.toString().replace('.', ',')} ${shortName}`
+  }
+  return null
+}
+
+// Marktguru liefert im Suchergebnis keine fertige Bild-URL, nur `images.count`.
+// Bilder werden über ein bekanntes CDN-Muster anhand der Angebots-ID
+// zusammengesetzt (siehe github.com/sydev/marktguru). "large" ist eine
+// Vermutung für den Größen-Parameter - falls Bilder nicht laden, hier
+// anpassen; das Frontend fängt einen 404 ohnehin mit einem Platzhalter ab.
 function imageUrl(offer: RawOffer): string | null {
-  return offer.imageUrl ?? offer.image ?? offer.images?.[0]?.url ?? null
+  if (offer.id == null) return null
+  return `https://mg2de.b-cdn.net/api/v1/offers/${offer.id}/images/default/0/large.jpg`
 }
 
 export interface MonsterDeal {
@@ -168,6 +186,7 @@ export interface MonsterDeal {
   retailer: string
   price: number | null
   priceText: string | null
+  oldPriceText: string | null
   unit: string | null
   validFrom: string | null
   validUntil: string | null
@@ -177,20 +196,20 @@ export interface MonsterDeal {
 
 /**
  * Sucht bei Marktguru nach "Monster Energy" und filtert clientseitig nochmal
- * auf Treffer, die "monster" im Titel/Marke enthalten - die Such-API liefert
- * sonst auch thematisch verwandte, aber irrelevante Treffer zurück.
+ * auf Treffer, die "monster" im Produktnamen/Marke enthalten - die Such-API
+ * liefert i.d.R. schon nur passende Treffer, das ist nur ein Sicherheitsnetz.
  */
 export function isMonsterOffer(offer: RawOffer): boolean {
-  const haystack = `${offer.title ?? offer.name ?? ''} ${brandName(offer)}`.toLowerCase()
+  const haystack = `${productName(offer)} ${brandName(offer)}`.toLowerCase()
   return haystack.includes('monster')
 }
 
-// Der Produkttitel ist bei Marktguru oft nur die generische Kategorie
+// Der Produktname ist bei Marktguru oft nur die generische Kategorie
 // ("Energy Drink"), die eigentliche Marke steckt separat in `brand`. Damit
-// Karten unterscheidbar sind, wird die Marke vorangestellt, falls der Titel
+// Karten unterscheidbar sind, wird die Marke vorangestellt, falls der Name
 // sie nicht schon enthält.
 function dealTitle(offer: RawOffer): string {
-  const base = offer.title ?? offer.name ?? 'Energy Drink'
+  const base = productName(offer)
   const brand = brandName(offer)
   if (brand && !base.toLowerCase().includes(brand.toLowerCase())) {
     return `${brand} ${base}`
@@ -199,45 +218,38 @@ function dealTitle(offer: RawOffer): string {
 }
 
 export function mapOffer(offer: RawOffer): MonsterDeal {
+  const validity = offer.validityDates?.[0]
   return {
-    id: String(offer.id ?? `${retailerName(offer)}-${offer.title ?? offer.name}`),
+    id: String(offer.id ?? `${retailerName(offer)}-${productName(offer)}`),
     title: dealTitle(offer),
     retailer: retailerName(offer),
     price: priceValue(offer),
     priceText: priceText(offer),
-    unit: offer.unit ?? null,
-    validFrom: offer.validFrom ?? offer.startDate ?? null,
-    validUntil: offer.validTo ?? offer.endDate ?? null,
+    oldPriceText: oldPriceText(offer),
+    unit: unitText(offer),
+    validFrom: validity?.from ?? null,
+    validUntil: validity?.to ?? null,
     imageUrl: imageUrl(offer),
-    sourceUrl: offer.webUrl ?? offer.url ?? null
+    sourceUrl: null
   }
 }
 
 // Nur für die Debug-Route (server/api/debug/marktguru.get.ts) - liefert die
 // KOMPLETTE, ungefilterte Rohantwort (nicht erst durch extractOffers()
 // geschickt), damit sichtbar wird, ob der Grund für 0 Treffer eine falsche
-// Envelope-Annahme (.offers/.items) oder eine wirklich leere API-Antwort ist.
-// Testet zusätzlich die einfachere Suche "Monster" zum Vergleich, da die
-// Marktguru-Website selbst offenbar nur nach "Monster" statt "Monster Energy"
-// sucht.
+// Envelope-Annahme oder eine wirklich leere API-Antwort ist.
 export async function debugRawSearch(zipCode: string) {
   const creds = await fetchClientCredentials()
-
-  async function probe(query: string) {
-    const url = buildSearchUrl(query, zipCode)
-    const body = await searchRaw(query, creds, zipCode)
-    const extracted = extractOffers(body)
-    return {
-      requestUrl: url.href,
-      topLevelKeys: body && typeof body === 'object' ? Object.keys(body) : typeof body,
-      extractedCount: extracted.length,
-      rawBody: body
-    }
-  }
-
+  const url = buildSearchUrl('Monster Energy', zipCode)
+  const body = await searchRaw('Monster Energy', creds, zipCode)
+  const extracted = extractOffers(body)
   return {
-    query_MonsterEnergy: await probe('Monster Energy'),
-    query_Monster: await probe('Monster')
+    requestUrl: url.href,
+    topLevelKeys: body && typeof body === 'object' ? Object.keys(body) : typeof body,
+    extractedCount: extracted.length,
+    matchedCount: extracted.filter(isMonsterOffer).length,
+    mapped: extracted.filter(isMonsterOffer).map(mapOffer),
+    rawBody: body
   }
 }
 

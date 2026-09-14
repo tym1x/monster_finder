@@ -5,6 +5,7 @@ interface Deal {
   retailer: string
   price: number | null
   priceText: string | null
+  oldPriceText: string | null
   unit: string | null
   validFrom: string | null
   validUntil: string | null
@@ -77,6 +78,23 @@ function retailerColor(name: string) {
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
   return retailerPalette[hash % retailerPalette.length]
 }
+
+// Die Bild-URL wird aus einem vermuteten CDN-Muster gebaut (siehe
+// server/utils/marktguru.ts) - falls sie 404ed, auf den Platzhalter zurückfallen.
+const brokenImages = reactive(new Set<string>())
+function onImageError(dealId: string) {
+  brokenImages.add(dealId)
+}
+
+// Bei SSR steht die Bild-URL schon im Server-HTML, der Browser lädt sie also
+// schon, bevor Vue hydratisiert ist und @error überhaupt zuhören kann. Ein
+// schneller Fehlschlag (wie hier, weil die CDN-Domain nicht erreichbar ist)
+// ist beim Mounten oft schon durch - deshalb hier zusätzlich direkt prüfen.
+function onImageMount(el: HTMLImageElement | null, dealId: string) {
+  if (el?.complete && el.naturalWidth === 0) {
+    onImageError(dealId)
+  }
+}
 </script>
 
 <template>
@@ -148,7 +166,15 @@ function retailerColor(name: string) {
           :style="{ '--accent': retailerColor(deal.retailer) }"
         >
           <div class="deal-image-wrap">
-            <img v-if="deal.imageUrl" :src="deal.imageUrl" :alt="deal.title" class="deal-image" loading="lazy" />
+            <img
+              v-if="deal.imageUrl && !brokenImages.has(deal.id)"
+              :ref="(el) => onImageMount(el as HTMLImageElement | null, deal.id)"
+              :src="deal.imageUrl"
+              :alt="deal.title"
+              class="deal-image"
+              loading="lazy"
+              @error="onImageError(deal.id)"
+            />
             <div v-else class="deal-image-placeholder">M</div>
           </div>
           <div class="deal-body">
@@ -156,13 +182,12 @@ function retailerColor(name: string) {
             <h2>{{ deal.title }}</h2>
             <div class="price-row">
               <span class="price">{{ deal.priceText ?? 'Preis unbekannt' }}</span>
+              <s v-if="deal.oldPriceText" class="old-price">{{ deal.oldPriceText }}</s>
               <span v-if="deal.validFrom || deal.validUntil" class="validity">
                 {{ formatDate(deal.validFrom) }}&ndash;{{ formatDate(deal.validUntil) }}
               </span>
             </div>
-            <a v-if="deal.sourceUrl" :href="deal.sourceUrl" target="_blank" rel="noopener" class="deal-link">
-              Zum Angebot →
-            </a>
+            <span v-if="deal.unit" class="unit">{{ deal.unit }}</span>
           </div>
         </li>
       </ul>
@@ -384,21 +409,23 @@ body {
   font-size: 1.3rem;
 }
 
+.old-price {
+  font-size: 0.85rem;
+  color: #9a998e;
+}
+
 .validity {
   font-size: 0.75rem;
   color: #8a8a80;
   white-space: nowrap;
+  margin-left: auto;
 }
 
-.deal-link {
+.unit {
   margin-top: auto;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ink);
-  text-decoration: none;
-  border-bottom: 2px solid var(--lime);
-  align-self: flex-start;
-  padding-bottom: 1px;
+  padding-top: 8px;
+  font-size: 0.75rem;
+  color: #9a998e;
 }
 
 .empty {

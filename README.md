@@ -81,14 +81,25 @@ docker run -p 3000:3000 -v $(pwd)/.data:/app/.data --env-file .env monster-finde
 
 - **Diese Sandbox konnte marktguru.de beim Entwickeln nicht erreichen**
   (Netzwerk-Policy dieser Umgebung blockt den Zugriff auf beliebige externe
-  Domains). Der Scraper wurde daher anhand der bekannten Struktur der
-  Marktguru-Website und öffentlich dokumentierter Community-Projekte gebaut,
-  aber **nicht live gegen die echte Seite getestet**. Beim ersten Start mit
-  echtem Internetzugang (z.B. auf deinem eigenen Rechner/Server) unbedingt
-  einmal `POST /api/deals/refresh` aufrufen bzw. den Button klicken und die
-  Server-Logs prüfen. Falls Marktguru ihr Seiten-Markup geändert hat, muss
-  ggf. nur `fetchClientCredentials()` in `server/utils/marktguru.ts`
-  angepasst werden – der Rest der App bleibt unberührt.
+  Domains). Das Feld-Mapping in `server/utils/marktguru.ts` wurde daher anhand
+  einer echten, von einem Nutzer mit funktionierendem Zugang eingefangenen
+  API-Antwort gebaut (siehe `GET /api/debug/marktguru` unten) und mit dieser
+  als Testfixture abgesichert - aber nie komplett end-to-end (inkl.
+  `fetchClientCredentials()`) selbst durchlaufen. Falls Marktguru ihr
+  Seiten-Markup oder ihre API wieder ändert, zeigt ein Server-Log-Eintrag
+  (`[marktguru] Such-API lieferte ... aber keiner wurde erkannt`) die neue
+  Rohstruktur.
+- **Debug-Route `GET /api/debug/marktguru`**: zeigt die komplette rohe
+  Such-API-Antwort inkl. bereits gemappter Angebote (`mapped`). Nützlich, um
+  das Mapping zu verifizieren oder eine neue Feldstruktur zu debuggen. Kann
+  entfernt werden, sobald alles zuverlässig läuft.
+- **Bild-URLs sind eine Vermutung**: Die Such-API liefert keine fertige
+  Bild-URL, nur `images.count`. Die URL wird nach einem aus einem
+  Community-Projekt bekannten CDN-Muster aus der Angebots-ID zusammengebaut
+  (`imageUrl()` in `marktguru.ts`). Falls Bilder nicht laden, zeigt das
+  Frontend automatisch einen Platzhalter statt eines kaputten Bildes.
+- **Kein Deep-Link zum Angebot**: Die Such-API liefert kein `url`-Feld für
+  das einzelne Angebot, daher gibt es aktuell keinen "Zum Angebot"-Link.
 - Marktguru hat keine öffentlich dokumentierte/offizielle API. Der Zugriff
   nutzt dieselben Endpunkte, die auch die normale Website im Browser lädt.
   Für den privaten, nicht-kommerziellen Gebrauch (wie hier) ist das ein

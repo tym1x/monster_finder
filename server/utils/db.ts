@@ -13,6 +13,7 @@ export interface DealRecord {
   retailer: string
   price: number | null
   priceText: string | null
+  oldPriceText: string | null
   unit: string | null
   validFrom: string | null
   validUntil: string | null
