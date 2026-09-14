@@ -210,6 +210,15 @@ export function mapOffer(offer: RawOffer): MonsterDeal {
   }
 }
 
+// Nur für die Debug-Route (server/api/debug/marktguru.get.ts) - liefert die
+// Rohdaten der Such-API ungefiltert, damit man die tatsächliche Feldstruktur
+// im Browser inspizieren kann, statt sie zu erraten.
+export async function debugRawSearch(zipCode: string) {
+  const creds = await fetchClientCredentials()
+  const raw = await searchOffers('Monster Energy', creds, zipCode)
+  return { totalCount: raw.length, matchedCount: raw.filter(isMonsterOffer).length, sample: raw.slice(0, 5) }
+}
+
 export async function fetchMonsterDeals(zipCode: string): Promise<MonsterDeal[]> {
   const creds = await fetchClientCredentials()
   const raw = await searchOffers('Monster Energy', creds, zipCode)
