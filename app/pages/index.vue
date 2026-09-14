@@ -72,7 +72,7 @@ function formatDateTime(value: string | null | undefined) {
 
 // Feste, ruhige Farbpalette für die Retailer-Akzentleiste an den Karten -
 // gehasht auf den Namen, damit derselbe Händler immer dieselbe Farbe bekommt.
-const retailerPalette = ['#2f6f4f', '#3f5d7d', '#8a5a2b', '#6b4c8a', '#2f7a7a', '#7a2f4f']
+const retailerPalette = ['#1c3d52', '#374a1f', '#5c3a1e', '#3d2f52', '#1f4a44', '#4a2233']
 function retailerColor(name: string) {
   let hash = 0
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
@@ -100,11 +100,25 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
 <template>
   <div class="page">
     <header class="header">
+      <svg class="header-engraving" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
+        <use href="#engraving-motif" />
+      </svg>
+      <svg class="header-peaks" viewBox="0 0 1200 90" preserveAspectRatio="none" aria-hidden="true">
+        <path
+          d="M0,90 L110,28 L200,60 L300,10 L400,55 L520,20 L620,58 L740,15 L860,52 L960,25 L1080,58 L1200,20 L1200,90 Z"
+        />
+      </svg>
+
       <div class="header-inner">
         <div class="brand">
-          <span class="brand-mark">M</span>
+          <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true">
+            <path
+              d="M18 8 L30 46 L24 62 L34 100 M46 8 L50 50 L44 64 L52 100 M74 8 L64 46 L70 62 L62 100"
+              fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"
+            />
+          </svg>
           <div class="brand-text">
-            <h1>MONSTER FINDER</h1>
+            <h1><span class="brand-anabolic">ANABOLIC</span> MONSTER FINDER</h1>
             <p>Angebote aus Supermarkt-Prospekten &middot; Quelle: Marktguru</p>
           </div>
         </div>
@@ -192,14 +206,41 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
         </li>
       </ul>
     </main>
+
+    <!-- Wiederverwendbares Gravur-Ornament fürs Header-Hintergrundmuster -->
+    <svg width="0" height="0" style="position: absolute">
+      <defs>
+        <g id="engraving-motif" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <!-- Horizontale Hauptranke, schlängelt sich über die Header-Breite -->
+          <path
+            d="M-20,100 C 40,70 70,130 130,95 C 180,65 200,120 260,90 C 310,62 330,115 390,85
+               C 440,58 460,110 520,80 C 560,58 580,95 630,75 C 670,58 690,100 740,78
+               C 780,60 800,95 850,75 C 890,60 910,90 960,72 C 1000,58 1020,88 1080,70
+               C 1120,56 1140,80 1220,65"
+          />
+          <!-- Abzweigende Ranken mit Blatt-Enden, wechselnd nach oben/unten -->
+          <path d="M130,95 C 140,70 165,68 175,45" />
+          <ellipse cx="178" cy="40" rx="12" ry="5" transform="rotate(60 178 40)" fill="currentColor" stroke="none" opacity="0.8" />
+          <path d="M260,90 C 270,120 295,125 305,148" />
+          <ellipse cx="308" cy="152" rx="11" ry="4.5" transform="rotate(-55 308 152)" fill="currentColor" stroke="none" opacity="0.8" />
+          <path d="M520,80 C 530,50 555,48 565,25" />
+          <ellipse cx="568" cy="20" rx="12" ry="5" transform="rotate(58 568 20)" fill="currentColor" stroke="none" opacity="0.8" />
+          <path d="M740,78 C 750,108 775,112 785,135" />
+          <ellipse cx="788" cy="139" rx="11" ry="4.5" transform="rotate(-55 788 139)" fill="currentColor" stroke="none" opacity="0.8" />
+          <path d="M960,72 C 970,45 995,42 1005,20" />
+          <ellipse cx="1008" cy="15" rx="11" ry="4.5" transform="rotate(58 1008 15)" fill="currentColor" stroke="none" opacity="0.8" />
+          <circle cx="1220" cy="65" r="5" fill="currentColor" stroke="none" opacity="0.7" />
+        </g>
+      </defs>
+    </svg>
   </div>
 </template>
 
 <style>
 :root {
-  --lime: #c4e023;
-  --ink: #0d0d0d;
-  --paper: #f3f2ee;
+  --ink: #0c0c0c;
+  --paper: #f2f1ec;
+  --steel: #3f6f82;
 }
 
 * {
@@ -208,20 +249,48 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
 
 body {
   margin: 0;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Arial Narrow', 'Segoe UI', system-ui, sans-serif;
   background: var(--paper);
   color: var(--ink);
 }
 
 .header {
-  background: var(--ink);
-  border-bottom: 4px solid var(--lime);
+  position: relative;
+  background: #fff;
+  border-bottom: 3px solid var(--ink);
+  overflow: hidden;
+}
+
+.header-engraving {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: #000;
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.header-peaks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34px;
+  width: 100%;
+  color: transparent;
+}
+
+.header-peaks path {
+  fill: #000;
+  opacity: 0.06;
 }
 
 .header-inner {
+  position: relative;
   max-width: 1100px;
   margin: 0 auto;
-  padding: 18px 20px;
+  padding: 20px 20px 26px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -232,33 +301,37 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  background: var(--lime);
+  width: 42px;
+  height: 46px;
   color: var(--ink);
-  font-weight: 900;
-  font-size: 1.3rem;
-  border-radius: 4px;
   flex-shrink: 0;
 }
 
 .brand-text h1 {
   margin: 0;
-  color: #fff;
-  font-size: 1.15rem;
-  letter-spacing: 0.06em;
+  color: var(--ink);
+  font-size: 1.3rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  font-style: italic;
+  transform: skewX(-4deg);
+}
+
+.brand-anabolic {
+  color: var(--steel);
+  margin-right: 0.35em;
 }
 
 .brand-text p {
-  margin: 2px 0 0;
-  color: #9a9a92;
+  margin: 4px 0 0;
+  color: #6b6a63;
   font-size: 0.8rem;
+  font-style: normal;
 }
 
 .header-actions {
@@ -266,29 +339,33 @@ body {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
+  position: relative;
 }
 
 .updated {
-  color: #b7b7ae;
+  color: #6b6a63;
   font-size: 0.82rem;
 }
 
 .refresh-btn {
-  padding: 9px 18px;
+  padding: 10px 20px;
   border: none;
-  border-radius: 4px;
-  background: var(--lime);
-  color: var(--ink);
-  font-weight: 700;
+  border-radius: 2px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-style: italic;
   cursor: pointer;
 }
 
 .refresh-btn:hover:not(:disabled) {
-  filter: brightness(0.92);
+  background: var(--steel);
 }
 
 .refresh-btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: default;
 }
 
@@ -327,7 +404,7 @@ body {
 .pill.active {
   background: var(--ink);
   border-color: var(--ink);
-  color: var(--lime);
+  color: #fff;
 }
 
 .deal-grid {
@@ -343,7 +420,7 @@ body {
   background: #fff;
   border: 1px solid #e3e2d9;
   border-left: 4px solid var(--accent, var(--ink));
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -352,23 +429,30 @@ body {
 
 .deal-card:not(.skeleton):hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
 }
 
 .deal-image-wrap {
   height: 130px;
-  display: grid;
-  place-items: center;
+  position: relative;
   margin-bottom: 10px;
+  overflow: hidden;
 }
 
 .deal-image {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: block;
   max-height: 100%;
   max-width: 100%;
   object-fit: contain;
 }
 
 .deal-image-placeholder {
+  position: absolute;
+  inset: 0;
+  margin: auto;
   width: 48px;
   height: 48px;
   border-radius: 50%;
@@ -473,5 +557,11 @@ body {
 @keyframes shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
+}
+
+@media (max-width: 480px) {
+  .brand-text h1 {
+    font-size: 1.05rem;
+  }
 }
 </style>
