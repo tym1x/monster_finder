@@ -26,8 +26,20 @@ Supermarkt-Prospekten sucht und sie übersichtlich anzeigt.
   jeden Montag um 06:00 Uhr und stößt einen neuen Scrape an. Beim allerersten
   Start (leere Datenbank) wird zusätzlich sofort einmal gescraped.
 - **Frontend** (`app/pages/index.vue`): Zeigt alle aktuellen Angebote als
-  Karten (Bild, Preis, Händler, Gültigkeitszeitraum), mit Filter nach Händler
-  und einem "Jetzt aktualisieren"-Button für manuelle Scrapes.
+  Karten (Bild, Preis, Händler, Gültigkeitszeitraum), mit Filter nach Händler,
+  Bestpreis-Markierung und einem Button für einen manuellen Scan.
+  Das Design ist an die weiße Monster-Ultra-Dose angelehnt; die Artworks
+  (Claw-Zeichen, barocke Gravur-Ornamente, Alpen-Silhouette) liegen als
+  Vektor-Komponenten in `app/components/ClawMark.vue` und
+  `app/components/AlpineBackdrop.vue` – keine externen Bild-Assets nötig.
+
+### Eigenes Hero-Foto einbinden (optional)
+
+Wer statt der gezeichneten Bergkulisse ein echtes Foto möchte, legt es
+einfach als `public/hero.jpg` ab. Es wird dann automatisch im Header
+eingeblendet (nach unten hin eingeblendet, damit Logo und Schrift lesbar
+bleiben). Fehlt die Datei, bleibt die Vektor-Kulisse stehen – es ist also
+kein Code-Eingriff nötig.
 
 ## Setup
 

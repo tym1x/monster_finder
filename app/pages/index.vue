@@ -40,6 +40,11 @@ const filteredDeals = computed(() => {
   return deals.value.filter((d) => d.retailer === selectedRetailer.value)
 })
 
+const bestPrice = computed(() => {
+  const prices = deals.value.map((d) => d.price).filter((p): p is number => p != null)
+  return prices.length ? Math.min(...prices) : null
+})
+
 const refreshing = ref(false)
 const refreshError = ref<string | null>(null)
 
@@ -67,16 +72,11 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return 'noch nie'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
+  return date.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
 }
 
-// Feste, ruhige Farbpalette für die Retailer-Akzentleiste an den Karten -
-// gehasht auf den Namen, damit derselbe Händler immer dieselbe Farbe bekommt.
-const retailerPalette = ['#1c3d52', '#374a1f', '#5c3a1e', '#3d2f52', '#1f4a44', '#4a2233']
-function retailerColor(name: string) {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
-  return retailerPalette[hash % retailerPalette.length]
+function formatPrice(value: number) {
+  return `${value.toFixed(2).replace('.', ',')} €`
 }
 
 // Die Bild-URL wird aus einem vermuteten CDN-Muster gebaut (siehe
@@ -88,8 +88,8 @@ function onImageError(dealId: string) {
 
 // Bei SSR steht die Bild-URL schon im Server-HTML, der Browser lädt sie also
 // schon, bevor Vue hydratisiert ist und @error überhaupt zuhören kann. Ein
-// schneller Fehlschlag (wie hier, weil die CDN-Domain nicht erreichbar ist)
-// ist beim Mounten oft schon durch - deshalb hier zusätzlich direkt prüfen.
+// schneller Fehlschlag ist beim Mounten oft schon durch - deshalb hier
+// zusätzlich direkt den Ladezustand prüfen.
 function onImageMount(el: HTMLImageElement | null, dealId: string) {
   if (el?.complete && el.naturalWidth === 0) {
     onImageError(dealId)
@@ -99,40 +99,51 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
 
 <template>
   <div class="page">
-    <header class="header">
-      <svg class="header-engraving" viewBox="0 0 1200 160" preserveAspectRatio="none" aria-hidden="true">
-        <use href="#engraving-motif" />
-      </svg>
-      <svg class="header-peaks" viewBox="0 0 1200 90" preserveAspectRatio="none" aria-hidden="true">
-        <path
-          d="M0,90 L110,28 L200,60 L300,10 L400,55 L520,20 L620,58 L740,15 L860,52 L960,25 L1080,58 L1200,20 L1200,90 Z"
-        />
-      </svg>
+    <header class="hero">
+      <AlpineBackdrop />
+      <ClawMark variant="solid" class="hero-watermark" />
 
-      <div class="header-inner">
-        <div class="brand">
-          <svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true">
-            <path
-              d="M18 8 L30 46 L24 62 L34 100 M46 8 L50 50 L44 64 L52 100 M74 8 L64 46 L70 62 L62 100"
-              fill="none" stroke="currentColor" stroke-width="11" stroke-linecap="square" stroke-linejoin="miter"
-            />
-          </svg>
-          <div class="brand-text">
-            <h1><span class="brand-anabolic">ANABOLIC</span> MONSTER FINDER</h1>
-            <p>Angebote aus Supermarkt-Prospekten &middot; Quelle: Marktguru</p>
+      <div class="hero-inner">
+        <div class="hero-top">
+          <div class="brand">
+            <ClawMark class="brand-claw" />
+            <div class="wordmark">
+              <span class="kicker">Anabolic</span>
+              <h1>Monster Finder</h1>
+              <p class="tagline">Wöchentlich gescannte Prospekt-Angebote &middot; Quelle: Marktguru</p>
+            </div>
           </div>
-        </div>
-        <div class="header-actions">
-          <span class="updated">Update: {{ formatDateTime(lastRun?.finishedAt) }}</span>
-          <button class="refresh-btn" :disabled="refreshing" @click="triggerRefresh">
-            {{ refreshing ? 'Läuft…' : 'Jetzt aktualisieren' }}
-          </button>
+
+          <div class="hero-actions">
+            <span class="updated">Stand {{ formatDateTime(lastRun?.finishedAt) }}</span>
+            <button class="refresh-btn" :disabled="refreshing" @click="triggerRefresh">
+              <span class="refresh-btn-label">{{ refreshing ? 'Scannt…' : 'Jetzt scannen' }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </header>
 
+    <section class="stat-band">
+      <dl class="stats">
+        <div class="stat">
+          <dt>Angebote</dt>
+          <dd>{{ deals.length }}</dd>
+        </div>
+        <div class="stat">
+          <dt>Bestpreis</dt>
+          <dd class="stat-highlight">{{ bestPrice != null ? formatPrice(bestPrice) : '—' }}</dd>
+        </div>
+        <div class="stat">
+          <dt>Händler</dt>
+          <dd>{{ retailers.length }}</dd>
+        </div>
+        <p class="stat-note">Automatischer Prospekt-Scan &middot; jeden Montag</p>
+      </dl>
+    </section>
+
     <p v-if="lastRun?.status === 'error' || refreshError" class="error-banner">
-      <strong>Scrape fehlgeschlagen:</strong> {{ refreshError ?? lastRun?.error }}
+      <strong>Scan fehlgeschlagen:</strong> {{ refreshError ?? lastRun?.error }}
     </p>
 
     <main class="content">
@@ -142,7 +153,7 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
           :class="{ active: selectedRetailer === 'alle' }"
           @click="selectedRetailer = 'alle'"
         >
-          Alle ({{ deals.length }})
+          Alle <span class="pill-count">{{ deals.length }}</span>
         </button>
         <button
           v-for="r in retailers"
@@ -164,22 +175,17 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
       </ul>
 
       <div v-else-if="!filteredDeals.length" class="empty">
-        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M4 8h16l-1.5 11.5a1 1 0 0 1-1 .5H6.5a1 1 0 0 1-1-.5L4 8Z" />
-          <path d="M8 8V6a4 4 0 0 1 8 0v2" />
-        </svg>
-        <p>Aktuell keine Monster Energy Angebote gefunden.</p>
-        <p class="empty-hint">Der nächste automatische Check läuft nächste Woche &ndash; oder klick oben auf "Jetzt aktualisieren".</p>
+        <ClawMark variant="solid" class="empty-claw" />
+        <p class="empty-title">Keine Angebote im Revier</p>
+        <p class="empty-hint">
+          Der nächste automatische Scan läuft kommenden Montag &ndash; oder jetzt oben selbst starten.
+        </p>
       </div>
 
       <ul v-else class="deal-grid">
-        <li
-          v-for="deal in filteredDeals"
-          :key="deal.id"
-          class="deal-card"
-          :style="{ '--accent': retailerColor(deal.retailer) }"
-        >
+        <li v-for="deal in filteredDeals" :key="deal.id" class="deal-card">
           <div class="deal-image-wrap">
+            <ClawMark variant="solid" class="card-watermark" />
             <img
               v-if="deal.imageUrl && !brokenImages.has(deal.id)"
               :ref="(el) => onImageMount(el as HTMLImageElement | null, deal.id)"
@@ -189,58 +195,39 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
               loading="lazy"
               @error="onImageError(deal.id)"
             />
-            <div v-else class="deal-image-placeholder">M</div>
+            <span v-if="deal.price != null && deal.price === bestPrice" class="best-badge">Bestpreis</span>
           </div>
+
           <div class="deal-body">
             <span class="retailer-tag">{{ deal.retailer }}</span>
             <h2>{{ deal.title }}</h2>
+
             <div class="price-row">
-              <span class="price">{{ deal.priceText ?? 'Preis unbekannt' }}</span>
+              <span class="price">{{ deal.priceText ?? '—' }}</span>
               <s v-if="deal.oldPriceText" class="old-price">{{ deal.oldPriceText }}</s>
-              <span v-if="deal.validFrom || deal.validUntil" class="validity">
-                {{ formatDate(deal.validFrom) }}&ndash;{{ formatDate(deal.validUntil) }}
+            </div>
+
+            <div class="deal-meta">
+              <span v-if="deal.unit">{{ deal.unit }}</span>
+              <span v-if="deal.validUntil" class="validity">
+                bis {{ formatDate(deal.validUntil) }}
               </span>
             </div>
-            <span v-if="deal.unit" class="unit">{{ deal.unit }}</span>
           </div>
         </li>
       </ul>
     </main>
-
-    <!-- Wiederverwendbares Gravur-Ornament fürs Header-Hintergrundmuster -->
-    <svg width="0" height="0" style="position: absolute">
-      <defs>
-        <g id="engraving-motif" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <!-- Horizontale Hauptranke, schlängelt sich über die Header-Breite -->
-          <path
-            d="M-20,100 C 40,70 70,130 130,95 C 180,65 200,120 260,90 C 310,62 330,115 390,85
-               C 440,58 460,110 520,80 C 560,58 580,95 630,75 C 670,58 690,100 740,78
-               C 780,60 800,95 850,75 C 890,60 910,90 960,72 C 1000,58 1020,88 1080,70
-               C 1120,56 1140,80 1220,65"
-          />
-          <!-- Abzweigende Ranken mit Blatt-Enden, wechselnd nach oben/unten -->
-          <path d="M130,95 C 140,70 165,68 175,45" />
-          <ellipse cx="178" cy="40" rx="12" ry="5" transform="rotate(60 178 40)" fill="currentColor" stroke="none" opacity="0.8" />
-          <path d="M260,90 C 270,120 295,125 305,148" />
-          <ellipse cx="308" cy="152" rx="11" ry="4.5" transform="rotate(-55 308 152)" fill="currentColor" stroke="none" opacity="0.8" />
-          <path d="M520,80 C 530,50 555,48 565,25" />
-          <ellipse cx="568" cy="20" rx="12" ry="5" transform="rotate(58 568 20)" fill="currentColor" stroke="none" opacity="0.8" />
-          <path d="M740,78 C 750,108 775,112 785,135" />
-          <ellipse cx="788" cy="139" rx="11" ry="4.5" transform="rotate(-55 788 139)" fill="currentColor" stroke="none" opacity="0.8" />
-          <path d="M960,72 C 970,45 995,42 1005,20" />
-          <ellipse cx="1008" cy="15" rx="11" ry="4.5" transform="rotate(58 1008 15)" fill="currentColor" stroke="none" opacity="0.8" />
-          <circle cx="1220" cy="65" r="5" fill="currentColor" stroke="none" opacity="0.7" />
-        </g>
-      </defs>
-    </svg>
   </div>
 </template>
 
 <style>
 :root {
-  --ink: #0c0c0c;
-  --paper: #f2f1ec;
-  --steel: #3f6f82;
+  --ink: #0b0d10;
+  --paper: #f4f5f6;
+  --line: #dcdfe4;
+  --muted: #6e747d;
+  --ultra: #1fa2c6;
+  --display: 'Haettenschweiler', 'Arial Narrow', 'Impact', 'Franklin Gothic Bold', system-ui, sans-serif;
 }
 
 * {
@@ -249,156 +236,225 @@ function onImageMount(el: HTMLImageElement | null, dealId: string) {
 
 body {
   margin: 0;
-  font-family: 'Arial Narrow', 'Segoe UI', system-ui, sans-serif;
+  font-family: system-ui, 'Segoe UI', sans-serif;
   background: var(--paper);
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
 }
 
-.header {
+/* ---------- Hero ---------- */
+
+.hero {
   position: relative;
   background: #fff;
-  border-bottom: 3px solid var(--ink);
   overflow: hidden;
 }
 
-.header-engraving {
+.hero-inner {
+  position: relative;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 34px 22px 118px;
+}
+
+/* Großer, blasser Claw im "Himmel" - zitiert das Dosen-Design */
+.hero-watermark {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  color: #000;
-  opacity: 0.16;
+  right: 11%;
+  top: 62px;
+  width: 176px;
+  height: 206px;
+  color: #0b0d10;
+  opacity: 0.05;
   pointer-events: none;
 }
 
-.header-peaks {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 34px;
-  width: 100%;
-  color: transparent;
-}
-
-.header-peaks path {
-  fill: #000;
-  opacity: 0.06;
-}
-
-.header-inner {
-  position: relative;
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 20px 20px 26px;
+.hero-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
   flex-wrap: wrap;
 }
 
 .brand {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  align-items: flex-start;
+  gap: 16px;
 }
 
-.brand-mark {
-  width: 42px;
-  height: 46px;
-  color: var(--ink);
+.brand-claw {
+  width: 72px;
+  height: 84px;
   flex-shrink: 0;
+  filter: drop-shadow(0 3px 7px rgba(0, 0, 0, 0.22));
 }
 
-.brand-text h1 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 1.3rem;
-  font-weight: 900;
-  letter-spacing: -0.01em;
+.kicker {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.46em;
   text-transform: uppercase;
-  font-style: italic;
-  transform: skewX(-4deg);
+  color: var(--ultra);
+  margin-bottom: 2px;
 }
 
-.brand-anabolic {
-  color: var(--steel);
-  margin-right: 0.35em;
+.wordmark h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(2.2rem, 5.6vw, 3.5rem);
+  line-height: 0.9;
+  /* Impact/Haettenschweiler kennen nur eine Schnittstärke, aber falls beide
+     fehlen, soll der Fallback wenigstens fett und schmal laufen. */
+  font-weight: 900;
+  font-stretch: condensed;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  transform: skewX(-7deg);
+  transform-origin: left;
+  color: var(--ink);
+  text-shadow: 0 1px 0 #fff, 0 2px 12px rgba(255, 255, 255, 0.95);
 }
 
-.brand-text p {
-  margin: 4px 0 0;
-  color: #6b6a63;
-  font-size: 0.8rem;
-  font-style: normal;
+.tagline {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
 }
 
-.header-actions {
+.hero-actions {
   display: flex;
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  position: relative;
 }
 
 .updated {
-  color: #6b6a63;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .refresh-btn {
-  padding: 10px 20px;
   border: none;
-  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
   background: var(--ink);
   color: #fff;
-  font-weight: 800;
+  /* abgeschrägte Ecken statt Radius - passt zum kantigen Look */
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+.refresh-btn-label {
+  display: block;
+  padding: 12px 22px;
+  font-family: var(--display);
+  font-weight: 900;
+  font-stretch: condensed;
+  font-size: 1.02rem;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-style: italic;
-  cursor: pointer;
+  transform: skewX(-7deg);
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background: var(--steel);
+  background: var(--ultra);
 }
 
 .refresh-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
+.stat-band {
+  background: var(--ink);
+  color: #fff;
+}
+
+.stats {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 15px 22px 17px;
+  display: flex;
+  align-items: flex-end;
+  gap: 44px;
+  flex-wrap: wrap;
+}
+
+.stat dt {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #8b939e;
+}
+
+.stat dd {
+  margin: 2px 0 0;
+  font-family: var(--display);
+  font-weight: 900;
+  font-stretch: condensed;
+  font-size: 1.95rem;
+  line-height: 1;
+  transform: skewX(-7deg);
+  transform-origin: left;
+}
+
+.stat-highlight {
+  color: var(--ultra);
+}
+
+.stat-note {
+  margin: 0 0 3px auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #767d87;
+}
+
+/* ---------- Fehler ---------- */
+
 .error-banner {
   margin: 0;
-  padding: 10px 20px;
-  background: #3a1414;
-  color: #ffb4b4;
-  font-size: 0.88rem;
+  padding: 11px 20px;
+  background: #2b1113;
+  color: #ffb9b9;
+  font-size: 0.86rem;
   text-align: center;
 }
 
+/* ---------- Inhalt ---------- */
+
 .content {
-  max-width: 1100px;
+  max-width: 1140px;
   margin: 0 auto;
-  padding: 24px 20px 60px;
+  padding: 26px 22px 70px;
 }
 
 .filters {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .pill {
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid #cfcec4;
+  padding: 7px 15px;
+  border: 1px solid var(--line);
   background: #fff;
   color: var(--ink);
-  font-size: 0.85rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
   cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.pill:hover:not(.active) {
+  border-color: var(--ink);
 }
 
 .pill.active {
@@ -407,36 +463,68 @@ body {
   color: #fff;
 }
 
+.pill-count {
+  opacity: 0.55;
+  margin-left: 4px;
+}
+
 .deal-grid {
   list-style: none;
   padding: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 18px;
 }
 
 .deal-card {
+  position: relative;
   background: #fff;
-  border: 1px solid #e3e2d9;
-  border-left: 4px solid var(--accent, var(--ink));
-  border-radius: 4px;
-  padding: 14px;
+  border: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+
+.deal-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  background: var(--ultra);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.18s ease;
 }
 
 .deal-card:not(.skeleton):hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  transform: translateY(-3px);
+  border-color: #c4c9d0;
+  box-shadow: 0 10px 26px rgba(11, 13, 16, 0.12);
+}
+
+.deal-card:not(.skeleton):hover::after {
+  transform: scaleX(1);
 }
 
 .deal-image-wrap {
-  height: 130px;
   position: relative;
-  margin-bottom: 10px;
+  height: 192px;
   overflow: hidden;
+  background: linear-gradient(160deg, #ffffff 0%, #f2f4f7 60%, #e4e8ed 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.card-watermark {
+  position: absolute;
+  right: -22px;
+  bottom: -26px;
+  width: 118px;
+  height: 138px;
+  color: #0b0d10;
+  opacity: 0.05;
 }
 
 .deal-image {
@@ -444,114 +532,133 @@ body {
   inset: 0;
   margin: auto;
   display: block;
-  max-height: 100%;
-  max-width: 100%;
+  max-width: 82%;
+  max-height: 86%;
   object-fit: contain;
+  filter: drop-shadow(0 6px 10px rgba(11, 13, 16, 0.16));
 }
 
-.deal-image-placeholder {
+.best-badge {
   position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--paper);
-  color: #b3b2a8;
-  font-weight: 900;
-  display: grid;
-  place-items: center;
-  font-size: 1.3rem;
+  top: 10px;
+  left: 0;
+  background: var(--ultra);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 5px 11px 5px 10px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+
+.deal-body {
+  padding: 13px 14px 15px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .retailer-tag {
-  align-self: flex-start;
-  font-size: 0.7rem;
-  font-weight: 700;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--accent, var(--ink));
-  margin-bottom: 4px;
+  color: var(--muted);
 }
 
 .deal-body h2 {
-  font-size: 1rem;
-  margin: 0 0 10px;
-  line-height: 1.3;
+  font-size: 0.94rem;
+  font-weight: 600;
+  margin: 5px 0 10px;
+  line-height: 1.32;
 }
 
 .price-row {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 9px;
+  margin-top: auto;
 }
 
 .price {
-  font-weight: 800;
-  font-size: 1.3rem;
+  font-family: var(--display);
+  font-weight: 900;
+  font-stretch: condensed;
+  font-size: 2rem;
+  line-height: 1;
+  transform: skewX(-7deg);
+  transform-origin: left;
 }
 
 .old-price {
   font-size: 0.85rem;
-  color: #9a998e;
+  color: var(--muted);
 }
 
-.validity {
-  font-size: 0.75rem;
-  color: #8a8a80;
-  white-space: nowrap;
-  margin-left: auto;
+.deal-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--muted);
 }
 
-.unit {
-  margin-top: auto;
-  padding-top: 8px;
-  font-size: 0.75rem;
-  color: #9a998e;
-}
+/* ---------- Leerzustand ---------- */
 
 .empty {
   text-align: center;
-  color: #6b6a60;
-  padding: 60px 20px;
+  padding: 64px 20px 80px;
+  color: var(--muted);
 }
 
-.empty svg {
-  color: #cfcec4;
-  margin-bottom: 12px;
+.empty-claw {
+  width: 66px;
+  height: 77px;
+  color: #0b0d10;
+  opacity: 0.12;
+}
+
+.empty-title {
+  font-family: var(--display);
+  font-weight: 900;
+  font-stretch: condensed;
+  font-size: 1.6rem;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 14px 0 6px;
+  transform: skewX(-7deg);
 }
 
 .empty-hint {
-  font-size: 0.85rem;
-  color: #9a998e;
+  margin: 0;
+  font-size: 0.86rem;
 }
 
-.skeleton {
-  border-left-color: #e3e2d9;
-}
+/* ---------- Skeleton ---------- */
 
 .skeleton-block {
-  background: linear-gradient(90deg, #ececE4 25%, #f5f4ee 37%, #ececE4 63%);
+  background: linear-gradient(90deg, #ededf0 25%, #f7f8f9 37%, #ededf0 63%);
   background-size: 400% 100%;
   animation: shimmer 1.4s ease infinite;
-  border-radius: 4px;
 }
 
 .skeleton-block.image {
-  height: 130px;
-  margin-bottom: 10px;
+  height: 192px;
 }
 
 .skeleton-block.line {
-  height: 14px;
-  margin-bottom: 8px;
+  height: 13px;
+  margin: 14px 14px 0;
 }
 
 .skeleton-block.line.short {
-  width: 60%;
-  height: 10px;
+  width: 45%;
+  height: 9px;
+  margin-top: 16px;
 }
 
 @keyframes shimmer {
@@ -559,9 +666,32 @@ body {
   100% { background-position: -100% 0; }
 }
 
-@media (max-width: 480px) {
-  .brand-text h1 {
-    font-size: 1.05rem;
+@media (max-width: 620px) {
+  .hero-top {
+    flex-direction: column;
+  }
+
+  .hero-inner {
+    padding-bottom: 92px;
+  }
+
+  .stats {
+    gap: 26px;
+  }
+
+  .stat dd {
+    font-size: 1.55rem;
+  }
+
+  .stat-note {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Auf schmalen Screens liegt das Wasserzeichen sonst unter der Schrift */
+  .hero-watermark {
+    display: none;
   }
 }
 </style>

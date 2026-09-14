@@ -211,10 +211,16 @@ export function isMonsterOffer(offer: RawOffer): boolean {
 function dealTitle(offer: RawOffer): string {
   const base = productName(offer)
   const brand = brandName(offer)
-  if (brand && !base.toLowerCase().includes(brand.toLowerCase())) {
-    return `${brand} ${base}`
+  if (!brand || base.toLowerCase().includes(brand.toLowerCase())) {
+    return base
   }
-  return base
+  // Überlappendes Wort weglassen, sonst entsteht "Monster Energy Energy Drink".
+  const brandWords = brand.split(' ')
+  const baseWords = base.split(' ')
+  if (brandWords.at(-1)?.toLowerCase() === baseWords[0]?.toLowerCase()) {
+    baseWords.shift()
+  }
+  return [...brandWords, ...baseWords].join(' ')
 }
 
 export function mapOffer(offer: RawOffer): MonsterDeal {

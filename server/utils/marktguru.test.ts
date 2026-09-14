@@ -53,7 +53,8 @@ describe('mapOffer', () => {
     const deal = mapOffer(realOffer)
 
     expect(deal.id).toBe('24841118')
-    expect(deal.title).toBe('Monster Energy Energy Drink')
+    // "Monster Energy" + "Energy Drink" - das doppelte Wort fällt weg
+    expect(deal.title).toBe('Monster Energy Drink')
     expect(deal.retailer).toBe('REWE')
     expect(deal.price).toBe(0.99)
     expect(deal.priceText).toBe('0,99 €')
@@ -67,5 +68,10 @@ describe('mapOffer', () => {
   it('zeigt einen Streichpreis, wenn oldPrice höher als price ist', () => {
     const deal = mapOffer({ ...realOffer, price: 0.99, oldPrice: 1.49 })
     expect(deal.oldPriceText).toBe('1,49 €')
+  })
+
+  it('lässt einen Produktnamen unangetastet, der die Marke schon enthält', () => {
+    const deal = mapOffer({ ...realOffer, product: { name: 'Monster Energy Ultra 500ml' } })
+    expect(deal.title).toBe('Monster Energy Ultra 500ml')
   })
 })
