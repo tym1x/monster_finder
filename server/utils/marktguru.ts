@@ -1,7 +1,9 @@
 import * as cheerio from 'cheerio'
 
 const HOMEPAGE_URL = 'https://www.marktguru.de/'
-const API_BASE = 'https://api.marktguru.de/api/v1'
+// Trailing slash ist Pflicht: new URL('offers/search', base) würde sonst das
+// letzte Pfadsegment von base (hier "v1") verwerfen statt anzuhängen.
+const API_BASE = 'https://api.marktguru.de/api/v1/'
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
@@ -93,17 +95,22 @@ export function findKeysDeep(node: unknown, depth = 0): Partial<ClientCredential
   return result
 }
 
-async function searchOffers(
-  query: string,
-  creds: ClientCredentials,
-  zipCode: string
-): Promise<RawOffer[]> {
+export function buildSearchUrl(query: string, zipCode: string): URL {
   const url = new URL('offers/search', API_BASE)
   url.searchParams.set('as', 'web')
   url.searchParams.set('q', query)
   url.searchParams.set('limit', '200')
   url.searchParams.set('offset', '0')
   url.searchParams.set('zipCode', zipCode)
+  return url
+}
+
+async function searchOffers(
+  query: string,
+  creds: ClientCredentials,
+  zipCode: string
+): Promise<RawOffer[]> {
+  const url = buildSearchUrl(query, zipCode)
 
   const res = await fetch(url, {
     headers: {

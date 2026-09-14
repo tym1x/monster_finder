@@ -59,120 +59,250 @@ function formatDate(value: string | null) {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('de-DE')
+  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
 }
 
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return '-'
+  if (!value) return 'noch nie'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('de-DE')
+  return date.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+// Feste, ruhige Farbpalette für die Retailer-Akzentleiste an den Karten -
+// gehasht auf den Namen, damit derselbe Händler immer dieselbe Farbe bekommt.
+const retailerPalette = ['#2f6f4f', '#3f5d7d', '#8a5a2b', '#6b4c8a', '#2f7a7a', '#7a2f4f']
+function retailerColor(name: string) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+  return retailerPalette[hash % retailerPalette.length]
 }
 </script>
 
 <template>
-  <main class="page">
+  <div class="page">
     <header class="header">
-      <h1>🥤 Monster Energy Finder</h1>
-      <p class="subtitle">Aktuelle Angebote aus Supermarkt-Prospekten (Quelle: Marktguru)</p>
+      <div class="header-inner">
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <div class="brand-text">
+            <h1>MONSTER FINDER</h1>
+            <p>Angebote aus Supermarkt-Prospekten &middot; Quelle: Marktguru</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <span class="updated">Update: {{ formatDateTime(lastRun?.finishedAt) }}</span>
+          <button class="refresh-btn" :disabled="refreshing" @click="triggerRefresh">
+            {{ refreshing ? 'Läuft…' : 'Jetzt aktualisieren' }}
+          </button>
+        </div>
+      </div>
     </header>
 
-    <section class="status">
-      <span>Letztes Update: {{ formatDateTime(lastRun?.finishedAt) }}</span>
-      <span v-if="lastRun?.status === 'error'" class="error">
-        Letzter Lauf fehlgeschlagen: {{ lastRun?.error }}
-      </span>
-      <button :disabled="refreshing" @click="triggerRefresh">
-        {{ refreshing ? 'Aktualisiere...' : 'Jetzt aktualisieren' }}
-      </button>
-    </section>
-    <p v-if="refreshError" class="error">{{ refreshError }}</p>
-
-    <section v-if="retailers.length" class="filters">
-      <label for="retailer">Händler:</label>
-      <select id="retailer" v-model="selectedRetailer">
-        <option value="alle">Alle</option>
-        <option v-for="r in retailers" :key="r" :value="r">{{ r }}</option>
-      </select>
-    </section>
-
-    <p v-if="pending">Lade Angebote...</p>
-    <p v-else-if="!filteredDeals.length" class="empty">
-      Aktuell keine Monster Energy Angebote gefunden.
+    <p v-if="lastRun?.status === 'error' || refreshError" class="error-banner">
+      <strong>Scrape fehlgeschlagen:</strong> {{ refreshError ?? lastRun?.error }}
     </p>
 
-    <ul v-else class="deal-grid">
-      <li v-for="deal in filteredDeals" :key="deal.id" class="deal-card">
-        <img v-if="deal.imageUrl" :src="deal.imageUrl" :alt="deal.title" class="deal-image" />
-        <div class="deal-body">
-          <h2>{{ deal.title }}</h2>
-          <p class="retailer">{{ deal.retailer }}</p>
-          <p class="price">{{ deal.priceText ?? 'Preis unbekannt' }}</p>
-          <p v-if="deal.validFrom || deal.validUntil" class="validity">
-            gültig {{ formatDate(deal.validFrom) }} - {{ formatDate(deal.validUntil) }}
-          </p>
-          <a v-if="deal.sourceUrl" :href="deal.sourceUrl" target="_blank" rel="noopener">Zum Angebot</a>
-        </div>
-      </li>
-    </ul>
-  </main>
+    <main class="content">
+      <div v-if="retailers.length > 1" class="filters">
+        <button
+          class="pill"
+          :class="{ active: selectedRetailer === 'alle' }"
+          @click="selectedRetailer = 'alle'"
+        >
+          Alle ({{ deals.length }})
+        </button>
+        <button
+          v-for="r in retailers"
+          :key="r"
+          class="pill"
+          :class="{ active: selectedRetailer === r }"
+          @click="selectedRetailer = r"
+        >
+          {{ r }}
+        </button>
+      </div>
+
+      <ul v-if="pending" class="deal-grid" aria-hidden="true">
+        <li v-for="i in 6" :key="i" class="deal-card skeleton">
+          <div class="skeleton-block image" />
+          <div class="skeleton-block line short" />
+          <div class="skeleton-block line" />
+        </li>
+      </ul>
+
+      <div v-else-if="!filteredDeals.length" class="empty">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M4 8h16l-1.5 11.5a1 1 0 0 1-1 .5H6.5a1 1 0 0 1-1-.5L4 8Z" />
+          <path d="M8 8V6a4 4 0 0 1 8 0v2" />
+        </svg>
+        <p>Aktuell keine Monster Energy Angebote gefunden.</p>
+        <p class="empty-hint">Der nächste automatische Check läuft nächste Woche &ndash; oder klick oben auf "Jetzt aktualisieren".</p>
+      </div>
+
+      <ul v-else class="deal-grid">
+        <li
+          v-for="deal in filteredDeals"
+          :key="deal.id"
+          class="deal-card"
+          :style="{ '--accent': retailerColor(deal.retailer) }"
+        >
+          <div class="deal-image-wrap">
+            <img v-if="deal.imageUrl" :src="deal.imageUrl" :alt="deal.title" class="deal-image" loading="lazy" />
+            <div v-else class="deal-image-placeholder">M</div>
+          </div>
+          <div class="deal-body">
+            <span class="retailer-tag">{{ deal.retailer }}</span>
+            <h2>{{ deal.title }}</h2>
+            <div class="price-row">
+              <span class="price">{{ deal.priceText ?? 'Preis unbekannt' }}</span>
+              <span v-if="deal.validFrom || deal.validUntil" class="validity">
+                {{ formatDate(deal.validFrom) }}&ndash;{{ formatDate(deal.validUntil) }}
+              </span>
+            </div>
+            <a v-if="deal.sourceUrl" :href="deal.sourceUrl" target="_blank" rel="noopener" class="deal-link">
+              Zum Angebot →
+            </a>
+          </div>
+        </li>
+      </ul>
+    </main>
+  </div>
 </template>
 
 <style>
+:root {
+  --lime: #c4e023;
+  --ink: #0d0d0d;
+  --paper: #f3f2ee;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
-  background: #f5f5f5;
-  color: #1a1a1a;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
 }
 
-.page {
-  max-width: 1000px;
+.header {
+  background: var(--ink);
+  border-bottom: 4px solid var(--lime);
+}
+
+.header-inner {
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 24px 16px;
-}
-
-.header h1 {
-  margin-bottom: 4px;
-}
-
-.subtitle {
-  color: #555;
-  margin-top: 0;
-}
-
-.status {
+  padding: 18px 20px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  margin: 16px 0;
 }
 
-.status button {
-  padding: 8px 16px;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  background: var(--lime);
+  color: var(--ink);
+  font-weight: 900;
+  font-size: 1.3rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.brand-text h1 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.15rem;
+  letter-spacing: 0.06em;
+}
+
+.brand-text p {
+  margin: 2px 0 0;
+  color: #9a9a92;
+  font-size: 0.8rem;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.updated {
+  color: #b7b7ae;
+  font-size: 0.82rem;
+}
+
+.refresh-btn {
+  padding: 9px 18px;
   border: none;
-  border-radius: 6px;
-  background: #0a8f3c;
-  color: white;
+  border-radius: 4px;
+  background: var(--lime);
+  color: var(--ink);
+  font-weight: 700;
   cursor: pointer;
 }
 
-.status button:disabled {
+.refresh-btn:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+.refresh-btn:disabled {
   opacity: 0.6;
   cursor: default;
 }
 
-.error {
-  color: #c0392b;
+.error-banner {
+  margin: 0;
+  padding: 10px 20px;
+  background: #3a1414;
+  color: #ffb4b4;
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.content {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
 }
 
 .filters {
-  margin-bottom: 16px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
 }
 
-.empty {
-  color: #555;
+.pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #cfcec4;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.pill.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--lime);
 }
 
 .deal-grid {
@@ -180,46 +310,141 @@ body {
   padding: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 16px;
 }
 
 .deal-card {
-  background: white;
-  border-radius: 10px;
-  padding: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  background: #fff;
+  border: 1px solid #e3e2d9;
+  border-left: 4px solid var(--accent, var(--ink));
+  border-radius: 6px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.deal-card:not(.skeleton):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.deal-image-wrap {
+  height: 130px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 10px;
 }
 
 .deal-image {
-  width: 100%;
-  height: 140px;
+  max-height: 100%;
+  max-width: 100%;
   object-fit: contain;
-  margin-bottom: 8px;
+}
+
+.deal-image-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--paper);
+  color: #b3b2a8;
+  font-weight: 900;
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+}
+
+.retailer-tag {
+  align-self: flex-start;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent, var(--ink));
+  margin-bottom: 4px;
 }
 
 .deal-body h2 {
-  font-size: 1.05rem;
-  margin: 0 0 4px;
+  font-size: 1rem;
+  margin: 0 0 10px;
+  line-height: 1.3;
 }
 
-.retailer {
-  color: #555;
-  margin: 0 0 4px;
+.price-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .price {
-  font-weight: bold;
-  font-size: 1.2rem;
-  color: #0a8f3c;
-  margin: 0 0 4px;
+  font-weight: 800;
+  font-size: 1.3rem;
 }
 
 .validity {
+  font-size: 0.75rem;
+  color: #8a8a80;
+  white-space: nowrap;
+}
+
+.deal-link {
+  margin-top: auto;
   font-size: 0.85rem;
-  color: #777;
-  margin: 0 0 8px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 2px solid var(--lime);
+  align-self: flex-start;
+  padding-bottom: 1px;
+}
+
+.empty {
+  text-align: center;
+  color: #6b6a60;
+  padding: 60px 20px;
+}
+
+.empty svg {
+  color: #cfcec4;
+  margin-bottom: 12px;
+}
+
+.empty-hint {
+  font-size: 0.85rem;
+  color: #9a998e;
+}
+
+.skeleton {
+  border-left-color: #e3e2d9;
+}
+
+.skeleton-block {
+  background: linear-gradient(90deg, #ececE4 25%, #f5f4ee 37%, #ececE4 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 4px;
+}
+
+.skeleton-block.image {
+  height: 130px;
+  margin-bottom: 10px;
+}
+
+.skeleton-block.line {
+  height: 14px;
+  margin-bottom: 8px;
+}
+
+.skeleton-block.line.short {
+  width: 60%;
+  height: 10px;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 </style>

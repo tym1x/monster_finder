@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { findKeysDeep, isMonsterOffer, mapOffer } from './marktguru'
+import { buildSearchUrl, findKeysDeep, isMonsterOffer, mapOffer } from './marktguru'
+
+describe('buildSearchUrl', () => {
+  it('behält das /api/v1 Pfadsegment (Regression: URL-Auflösung verschluckte es)', () => {
+    const url = buildSearchUrl('Monster Energy', '10115')
+    expect(url.href).toMatch(/^https:\/\/api\.marktguru\.de\/api\/v1\/offers\/search\?/)
+  })
+})
 
 describe('findKeysDeep', () => {
   it('findet apiKey/clientKey egal wie tief verschachtelt', () => {
