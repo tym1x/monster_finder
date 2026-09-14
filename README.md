@@ -16,9 +16,11 @@ Supermarkt-Prospekten sucht und sie übersichtlich anzeigt.
   `api.marktguru.de/api/v1/offers/search?q=Monster Energy` auf. Treffer, die
   nicht wirklich "Monster" im Titel/Marke enthalten, werden rausgefiltert.
 - **Speicherung** (`server/utils/db.ts`): Ergebnisse landen in einer lokalen
-  SQLite-Datenbank (`.data/monster-deals.sqlite`). Angebote, die bei einem
-  neuen Lauf nicht mehr auftauchen (abgelaufenes Prospekt), werden als
-  inaktiv markiert statt gelöscht.
+  JSON-Datei (`.data/monster-deals.json`) – bewusst keine echte Datenbank wie
+  SQLite, damit keine native Kompilierung (node-gyp/Build-Tools) nötig ist
+  und `npm install` auf jedem System ohne Zusatz-Setup klappt. Angebote, die
+  bei einem neuen Lauf nicht mehr auftauchen (abgelaufenes Prospekt), werden
+  als inaktiv markiert statt gelöscht.
 - **Wöchentliches Update** (`server/plugins/scheduler.ts`): Ein
   [node-cron](https://www.npmjs.com/package/node-cron)-Job läuft standardmäßig
   jeden Montag um 06:00 Uhr und stößt einen neuen Scrape an. Beim allerersten
@@ -43,7 +45,7 @@ Danach ist die App unter `http://localhost:3000` erreichbar.
 |------------------|---------------------------------------------------------|-----------------|
 | `DEALS_ZIP_CODE` | PLZ, für die Angebote gesucht werden                     | `10115`         |
 | `CRON_SCHEDULE`  | Cron-Ausdruck für den automatischen Scrape               | `0 6 * * 1`     |
-| `DEALS_DB_PATH`  | Pfad zur SQLite-Datei                                    | `.data/monster-deals.sqlite` |
+| `DEALS_DB_PATH`  | Pfad zur JSON-Datenspeicherdatei                         | `.data/monster-deals.json` |
 
 ## API-Endpunkte
 

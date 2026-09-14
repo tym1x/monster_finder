@@ -14,10 +14,10 @@ interface Deal {
 }
 
 interface LastRun {
-  started_at: string
-  finished_at: string | null
+  startedAt: string
+  finishedAt: string | null
   status: string
-  deals_found: number
+  dealsFound: number
   error: string | null
 }
 
@@ -78,7 +78,7 @@ function formatDateTime(value: string | null | undefined) {
     </header>
 
     <section class="status">
-      <span>Letztes Update: {{ formatDateTime(lastRun?.finished_at) }}</span>
+      <span>Letztes Update: {{ formatDateTime(lastRun?.finishedAt) }}</span>
       <span v-if="lastRun?.status === 'error'" class="error">
         Letzter Lauf fehlgeschlagen: {{ lastRun?.error }}
       </span>

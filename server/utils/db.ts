@@ -1,40 +1,11 @@
-import Database from 'better-sqlite3'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-// Die DB-Datei liegt außerhalb von .nuxt/.output, damit sie Neustarts übersteht.
-const dbPath = process.env.DEALS_DB_PATH || join(process.cwd(), '.data', 'monster-deals.sqlite')
+// Einfache JSON-Datei statt einer echten Datenbank - braucht keine native
+// Kompilierung (kein node-gyp/Visual-Studio-Build-Tools nötig) und reicht für
+// die paar Dutzend Angebote dieser App völlig aus.
+const dbPath = process.env.DEALS_DB_PATH || join(process.cwd(), '.data', 'monster-deals.json')
 mkdirSync(dirname(dbPath), { recursive: true })
-
-export const db = new Database(dbPath)
-db.pragma('journal_mode = WAL')
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS deals (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    retailer TEXT NOT NULL,
-    price REAL,
-    price_text TEXT,
-    unit TEXT,
-    valid_from TEXT,
-    valid_until TEXT,
-    image_url TEXT,
-    source_url TEXT,
-    first_seen_at TEXT NOT NULL,
-    last_seen_at TEXT NOT NULL,
-    active INTEGER NOT NULL DEFAULT 1
-  );
-
-  CREATE TABLE IF NOT EXISTS scrape_runs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    started_at TEXT NOT NULL,
-    finished_at TEXT,
-    status TEXT NOT NULL DEFAULT 'running',
-    deals_found INTEGER NOT NULL DEFAULT 0,
-    error TEXT
-  );
-`)
 
 export interface DealRecord {
   id: string
@@ -49,71 +20,108 @@ export interface DealRecord {
   sourceUrl: string | null
 }
 
-const upsertStmt = db.prepare(`
-  INSERT INTO deals (
-    id, title, retailer, price, price_text, unit, valid_from, valid_until,
-    image_url, source_url, first_seen_at, last_seen_at, active
-  ) VALUES (
-    @id, @title, @retailer, @price, @priceText, @unit, @validFrom, @validUntil,
-    @imageUrl, @sourceUrl, @now, @now, 1
-  )
-  ON CONFLICT(id) DO UPDATE SET
-    title = excluded.title,
-    retailer = excluded.retailer,
-    price = excluded.price,
-    price_text = excluded.price_text,
-    unit = excluded.unit,
-    valid_from = excluded.valid_from,
-    valid_until = excluded.valid_until,
-    image_url = excluded.image_url,
-    source_url = excluded.source_url,
-    last_seen_at = excluded.last_seen_at,
-    active = 1
-`)
+interface StoredDeal extends DealRecord {
+  firstSeenAt: string
+  lastSeenAt: string
+  active: boolean
+}
+
+export interface ScrapeRun {
+  id: number
+  startedAt: string
+  finishedAt: string | null
+  status: 'running' | 'ok' | 'error'
+  dealsFound: number
+  error: string | null
+}
+
+interface Store {
+  deals: StoredDeal[]
+  runs: ScrapeRun[]
+}
+
+function load(): Store {
+  if (!existsSync(dbPath)) {
+    return { deals: [], runs: [] }
+  }
+  try {
+    return JSON.parse(readFileSync(dbPath, 'utf-8'))
+  } catch {
+    // beschädigte/leere Datei - lieber frisch anfangen als die App crashen lassen
+    return { deals: [], runs: [] }
+  }
+}
+
+function save(store: Store) {
+  writeFileSync(dbPath, JSON.stringify(store, null, 2), 'utf-8')
+}
 
 export function upsertDeals(deals: DealRecord[]) {
+  const store = load()
   const now = new Date().toISOString()
-  const tx = db.transaction((items: DealRecord[]) => {
-    for (const deal of items) {
-      upsertStmt.run({ ...deal, now })
-    }
-  })
-  tx(deals)
+  const byId = new Map(store.deals.map((d) => [d.id, d]))
+
+  for (const deal of deals) {
+    const existing = byId.get(deal.id)
+    byId.set(deal.id, {
+      ...deal,
+      firstSeenAt: existing?.firstSeenAt ?? now,
+      lastSeenAt: now,
+      active: true
+    })
+  }
+
+  store.deals = Array.from(byId.values())
+  save(store)
   return now
 }
 
 // Angebote, die im aktuellen Scrape nicht mehr auftauchen, als inaktiv markieren
 // (Marktguru zeigt sie i.d.R. nicht mehr an, sobald das Prospekt abgelaufen ist).
 export function deactivateStale(seenAfter: string) {
-  db.prepare(`UPDATE deals SET active = 0 WHERE last_seen_at < ? AND active = 1`).run(seenAfter)
+  const store = load()
+  for (const deal of store.deals) {
+    if (deal.active && deal.lastSeenAt < seenAfter) {
+      deal.active = false
+    }
+  }
+  save(store)
 }
 
 export function listActiveDeals() {
-  return db.prepare(`
-    SELECT id, title, retailer, price, price_text as priceText, unit,
-           valid_from as validFrom, valid_until as validUntil,
-           image_url as imageUrl, source_url as sourceUrl,
-           last_seen_at as lastSeenAt
-    FROM deals
-    WHERE active = 1
-    ORDER BY (price IS NULL), price ASC, retailer ASC
-  `).all()
+  const store = load()
+  return store.deals
+    .filter((d) => d.active)
+    .sort((a, b) => {
+      if (a.price == null && b.price == null) return a.retailer.localeCompare(b.retailer)
+      if (a.price == null) return 1
+      if (b.price == null) return -1
+      return a.price - b.price || a.retailer.localeCompare(b.retailer)
+    })
 }
 
 export function recordRunStart() {
+  const store = load()
   const startedAt = new Date().toISOString()
-  const info = db.prepare(`INSERT INTO scrape_runs (started_at, status) VALUES (?, 'running')`).run(startedAt)
-  return { runId: info.lastInsertRowid as number, startedAt }
+  const runId = (store.runs.at(-1)?.id ?? 0) + 1
+  store.runs.push({ id: runId, startedAt, finishedAt: null, status: 'running', dealsFound: 0, error: null })
+  save(store)
+  return { runId, startedAt }
 }
 
 export function recordRunFinish(runId: number, dealsFound: number, error?: string) {
-  db.prepare(`
-    UPDATE scrape_runs
-    SET finished_at = ?, status = ?, deals_found = ?, error = ?
-    WHERE id = ?
-  `).run(new Date().toISOString(), error ? 'error' : 'ok', dealsFound, error ?? null, runId)
+  const store = load()
+  const run = store.runs.find((r) => r.id === runId)
+  if (run) {
+    run.finishedAt = new Date().toISOString()
+    run.status = error ? 'error' : 'ok'
+    run.dealsFound = dealsFound
+    run.error = error ?? null
+  }
+  save(store)
 }
 
-export function lastRun() {
-  return db.prepare(`SELECT * FROM scrape_runs ORDER BY id DESC LIMIT 1`).get()
+export function lastRun(): ScrapeRun | null {
+  const store = load()
+  return store.runs.at(-1) ?? null
 }
